@@ -64,6 +64,19 @@ Two supported modes, chosen by config:
   `FABRIC_TENANT_ID` + `FABRIC_CLIENT_ID` (a public client app registration)
   and prints a login URL/code.
 
+### Scopes (SPN vs device-code)
+
+The two modes request **different scopes**, and this matters:
+
+| Mode | Scope requested | Why |
+|------|-----------------|-----|
+| SPN (client credentials) | `https://api.fabric.microsoft.com/.default` | `.default` resolves to the app registration's pre-configured, admin-consented permissions. |
+| Device-code (public client) | `Item.ReadWrite.All` + `Workspace.ReadWrite.All` (explicit) | `.default` on a public client resolves to the app registration's *static* permissions, which often lack the Fabric delegated permissions — yielding a token with no Fabric scopes and an HTTP `403 InsufficientScopes`. Requesting the explicit delegated scopes avoids this. |
+
+If you hit `403 InsufficientScopes` on the device-code path, the app
+registration is missing the Fabric delegated permissions; requesting the
+explicit scopes (as the script now does) is the fix.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in:

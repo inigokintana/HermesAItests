@@ -21,7 +21,17 @@ import requests
 from dotenv import load_dotenv
 
 FABRIC_API = "https://api.fabric.microsoft.com/v1"
-SCOPES = ["https://api.fabric.microsoft.com/.default"]
+# SPN (client credentials) uses the ".default" scope, which resolves to the
+# app registration's pre-configured + admin-consented permissions.
+SPN_SCOPES = ["https://api.fabric.microsoft.com/.default"]
+# Device-code (public client) must request the explicit delegated scopes,
+# because ".default" only resolves to the app registration's static
+# permissions and often yields a token with no Fabric scopes at all
+# (-> HTTP 403 "InsufficientScopes").
+DELEGATED_SCOPES = [
+    "https://api.fabric.microsoft.com/Item.ReadWrite.All",
+    "https://api.fabric.microsoft.com/Workspace.ReadWrite.All",
+]
 
 # Statuses that mean "still running" (we should keep polling).
 IN_PROGRESS_STATUSES = {"InProgress", "NotStarted", "Queued", "Running"}
@@ -114,9 +124,9 @@ def acquire_token(tenant_id: str, client_id: str, client_secret: Optional[str]) 
     ) if client_secret else msal.PublicClientApplication(client_id, authority=authority)
 
     if client_secret:
-        result = app.acquire_token_for_client(scopes=SCOPES)
+        result = app.acquire_token_for_client(scopes=SPN_SCOPES)
     else:
-        flow = app.initiate_device_flow(scopes=SCOPES)
+        flow = app.initiate_device_flow(scopes=DELEGATED_SCOPES)
         if "user_code" not in flow:
             raise FabricError(f"Device flow failed: {flow}")
         print(f"Open {flow['verification_uri']} and enter code: {flow['user_code']}")

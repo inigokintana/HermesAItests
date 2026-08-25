@@ -1,0 +1,108 @@
+# Fabric Pipeline Monitor & Auto-Rerun
+
+A Python CLI that checks whether a Microsoft Fabric Data Pipeline in a given
+workspace succeeded, and if it failed, relaunches it — rerunning only the
+missing/failed part where possible.
+
+## Goal
+
+Given a Fabric **workspace** and a **pipeline**, the program must:
+
+1. Authenticate against Microsoft Fabric (Microsoft Entra ID / OAuth2).
+2. Locate the pipeline item in the workspace.
+3. Fetch the latest pipeline run (job instance) and read its status.
+4. Decide success vs. failure.
+5. On failure, identify *which activity* failed (the "missing part").
+6. Relaunch the pipeline — ideally only the failed part ("rerun from failed
+   activity"), otherwise a full on-demand run.
+
+## How it works (Fabric REST API)
+
+Base URL: `https://api.fabric.microsoft.com/v1`
+
+| Step | Endpoint | Method |
+|------|----------|--------|
+| Auth | MSAL token, scopes `Workspace.ReadWrite.All`, `Item.ReadWrite.All` | — |
+| Find pipeline | `/workspaces/{workspaceId}/items` (filter `type=DataPipeline`, match `displayName`) | GET |
+| List runs | `/workspaces/{workspaceId}/items/{itemId}/jobs/instances` | GET |
+| Get one run | `/workspaces/{workspaceId}/items/{itemId}/jobs/instances/{jobInstanceId}` | GET |
+| Relaunch (full) | `/workspaces/{workspaceId}/items/{itemId}/jobs/instances?jobType=Pipeline` | POST |
+| Activity runs | `/workspaces/{workspaceId}/datapipelines/pipelineruns/{jobId}/queryactivityruns` | POST |
+
+### Run status values
+
+`Completed`, `Failed`, `InProgress`, `Cancelled`, `NotStarted` (and others may
+be added over time). The program treats `Completed` as success and `Failed` as
+the trigger for a relaunch.
+
+### "Rerun the missing part only" — important caveat
+
+Fabric's UI has a **"Rerun from failed activity"** button, but the public REST
+API does **not** currently expose a documented endpoint for it (unlike Azure
+Data Factory, which uses `isRecovery` / `referencePipelineRunId` /
+`startFromFailure` on `createRun`).
+
+So the program implements a two-tier strategy:
+
+1. **Detect the failed activity** via `queryactivityruns` (returns per-activity
+   `status`, `error`, `activityName`, `activityRunId`).
+2. **Relaunch**:
+   - Primary: full on-demand run (`POST .../jobs/instances?jobType=Pipeline`).
+   - The failed-activity list is reported so a human (or a future API) can
+     target just that part. If/when Fabric exposes a recovery endpoint, the
+     `relaunch()` method is the single place to add it.
+
+## Authentication modes
+
+Two supported modes, chosen by config:
+
+- **Service principal (SPN)** — recommended for automation. Needs
+  `FABRIC_TENANT_ID`, `FABRIC_CLIENT_ID`, `FABRIC_CLIENT_SECRET`. The SPN must
+  be added to the workspace as a Contributor and Fabric REST APIs enabled in
+  the tenant admin portal.
+- **Device code (interactive)** — for local testing. Uses
+  `FABRIC_TENANT_ID` + `FABRIC_CLIENT_ID` (a public client app registration)
+  and prints a login URL/code.
+
+## Configuration
+
+Copy `.env.example` to `.env` and fill in:
+
+```
+FABRIC_TENANT_ID=...
+FABRIC_CLIENT_ID=...
+FABRIC_CLIENT_SECRET=...        # omit for device-code flow
+FABRIC_WORKSPACE_ID=...
+FABRIC_PIPELINE_NAME=...        # or FABRIC_PIPELINE_ID
+```
+
+## Usage
+
+```
+# create venv and install
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# check + auto-rerun
+python fabric_pipeline_monitor.py
+
+# check only (no relaunch)
+python fabric_pipeline_monitor.py --check-only
+
+# poll until the relaunched run finishes
+python fabric_pipeline_monitor.py --wait
+```
+
+## Files
+
+- `fabric_pipeline_monitor.py` — the program.
+- `requirements.txt` — `requests`, `msal`, `python-dotenv`.
+- `.env.example` — config template.
+- `.gitignore` — ignores `.env` and `.venv`.
+
+## Exit codes
+
+- `0` — pipeline succeeded (or relaunch accepted and completed).
+- `1` — pipeline failed and relaunch was triggered (or check-only found failure).
+- `2` — configuration / auth / API error.

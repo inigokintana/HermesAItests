@@ -85,7 +85,9 @@ So the program implements a two-tier strategy:
 
 ## Authentication modes
 
-Three supported modes, chosen by `FABRIC_AUTH_MODE` (`spn` is the default):
+Three supported modes, chosen by `FABRIC_AUTH_MODE`. If `FABRIC_AUTH_MODE` is
+unset, the mode is auto-detected: a `FABRIC_CLIENT_SECRET` → `spn`, otherwise
+`device`. An explicit `FABRIC_AUTH_MODE` always wins.
 
 - **Managed identity (`mi`)** — **preferred whenever the script runs on Azure**
   (VM, Function App, AKS, App Service, etc.). No client secret to store or
@@ -120,15 +122,7 @@ explicit scopes (as the script now does) is the fix.
 Copy `.env.example` to `.env` and fill in:
 
 ```
-# Microsoft Fabric / Entra ID
-#
-# Auth mode: one of "spn" (default), "device", or "mi" (managed identity).
-#   spn    -> service principal (client credentials); needs TENANT_ID, CLIENT_ID, CLIENT_SECRET.
-#   device -> interactive device-code login; needs TENANT_ID, CLIENT_ID.
-#   mi     -> Azure Managed Identity (IMDS); no secret. CLIENT_ID is optional
-#             (only for a user-assigned identity; omit for system-assigned).
-
-FABRIC_AUTH_MODE=spn            # spn | device | mi
+FABRIC_AUTH_MODE=               # optional: spn | device | mi (auto-detected if unset)
 FABRIC_TENANT_ID=...            # spn, device
 FABRIC_CLIENT_ID=...            # spn, device; mi (user-assigned only)
 FABRIC_CLIENT_SECRET=...        # spn only

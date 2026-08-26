@@ -239,7 +239,12 @@ def main() -> int:
     tenant_id = os.getenv("FABRIC_TENANT_ID")
     client_id = os.getenv("FABRIC_CLIENT_ID")
     client_secret = os.getenv("FABRIC_CLIENT_SECRET")
-    auth_mode = (os.getenv("FABRIC_AUTH_MODE") or "spn").lower()
+    # Auto-detect the auth mode when FABRIC_AUTH_MODE is unset, preserving the
+    # original behaviour: a client secret -> SPN, otherwise device-code.
+    # Explicit FABRIC_AUTH_MODE always wins.
+    auth_mode = (os.getenv("FABRIC_AUTH_MODE") or "").lower()
+    if not auth_mode:
+        auth_mode = "spn" if client_secret else "device"
     workspace_id = os.getenv("FABRIC_WORKSPACE_ID")
     pipeline_name = os.getenv("FABRIC_PIPELINE_NAME")
     pipeline_id = os.getenv("FABRIC_PIPELINE_ID")

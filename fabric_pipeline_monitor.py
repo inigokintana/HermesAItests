@@ -109,11 +109,16 @@ class FabricClient:
             "filters": [],
             "orderBy": [{"orderBy": "ActivityRunStart", "order": "DESC"}],
         }
-        return self._request(
+        data = self._request(
             "POST",
             f"{FABRIC_API}/workspaces/{workspace_id}/datapipelines/pipelineruns/{job_id}/queryactivityruns",
             json=body,
         )
+        # The endpoint returns a wrapper object {"value": [...], "continuationToken": ...},
+        # not a bare list (despite what some docs examples show).
+        if isinstance(data, dict):
+            return data.get("value", []) or []
+        return data or []
 
 
 def acquire_token(tenant_id: str, client_id: str, client_secret: Optional[str]) -> str:

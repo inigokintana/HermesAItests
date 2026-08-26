@@ -29,6 +29,22 @@ Base URL: `https://api.fabric.microsoft.com/v1`
 | Relaunch (full) | `/workspaces/{workspaceId}/items/{itemId}/jobs/instances?jobType=Pipeline` | POST |
 | Activity runs | `/workspaces/{workspaceId}/datapipelines/pipelineruns/{jobId}/queryactivityruns` | POST |
 
+### `queryactivityruns` response shape (gotcha)
+
+The `queryactivityruns` endpoint returns a **wrapper object**, not a bare
+list:
+
+```json
+{ "value": [ ...activity runs... ], "continuationToken": null }
+```
+
+Some docs examples show a bare JSON array, but the live API wraps the runs in
+`value`. The client unwraps `data["value"]` (and tolerates a bare list or
+`null` body) before filtering. Note that `value` can be **empty** even for a
+`Failed` run — activity-level detail is best-effort and not always available,
+so the script reports the pipeline-level `Failed` status and degrades
+gracefully rather than crashing.
+
 ### Run status values
 
 `Completed`, `Failed`, `InProgress`, `Cancelled`, `NotStarted` (and others may

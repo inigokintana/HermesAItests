@@ -120,6 +120,14 @@ explicit scopes (as the script now does) is the fix.
 Copy `.env.example` to `.env` and fill in:
 
 ```
+# Microsoft Fabric / Entra ID
+#
+# Auth mode: one of "spn" (default), "device", or "mi" (managed identity).
+#   spn    -> service principal (client credentials); needs TENANT_ID, CLIENT_ID, CLIENT_SECRET.
+#   device -> interactive device-code login; needs TENANT_ID, CLIENT_ID.
+#   mi     -> Azure Managed Identity (IMDS); no secret. CLIENT_ID is optional
+#             (only for a user-assigned identity; omit for system-assigned).
+
 FABRIC_AUTH_MODE=spn            # spn | device | mi
 FABRIC_TENANT_ID=...            # spn, device
 FABRIC_CLIENT_ID=...            # spn, device; mi (user-assigned only)

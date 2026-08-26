@@ -92,6 +92,12 @@ class FabricClient:
         )
 
     def run_on_demand(self, workspace_id: str, item_id: str, pipeline_name: str) -> dict:
+        # NOTE: this is a FULL pipeline run. Fabric's public REST API does NOT
+        # expose "rerun from failed activity" (unlike Azure Data Factory's
+        # isRecovery / referencePipelineRunId / startFromFailure). So even when
+        # we know which activity failed, the only programmatic relaunch is the
+        # whole pipeline. If Fabric ever adds a recovery endpoint, add it here
+        # (or in a sibling method) — this is the single place to change.
         payload = {
             "executionData": {
                 "pipelineName": pipeline_name,
@@ -154,7 +160,14 @@ def latest_run(client: FabricClient, workspace_id: str, item_id: str) -> Optiona
 
 
 def failed_activities(client: FabricClient, workspace_id: str, job_id: str) -> list[dict]:
-    """Return the list of activities whose status is not Succeeded."""
+    """Return the list of activities whose status is not Succeeded.
+
+    Best-effort: activity-level detail may be empty even for a Failed run
+    (the API can return no per-activity records, e.g. for older runs or runs
+    that failed before any activity was recorded). An empty result does NOT
+    mean nothing failed — it means the detail isn't available. The relaunch
+    is always a full pipeline run regardless (see run_on_demand).
+    """
     try:
         runs = client.query_activity_runs(workspace_id, job_id)
     except FabricError:
@@ -247,6 +260,10 @@ def main() -> int:
                 err = a.get("error") or {}
                 print(f"  - {a.get('activityName')} [{a.get('activityType')}] "
                       f"status={a.get('status')} error={err.get('message') or err.get('errorCode')}")
+        else:
+            print("No per-activity detail available for this run (the API returned "
+                  "no activity records). The pipeline failed, but the specific failing "
+                  "activity cannot be identified via this endpoint.")
 
         if args.check_only:
             print("--check-only: not relaunching.")

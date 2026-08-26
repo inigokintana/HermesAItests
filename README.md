@@ -66,7 +66,22 @@ So the program implements a two-tier strategy:
    - Primary: full on-demand run (`POST .../jobs/instances?jobType=Pipeline`).
    - The failed-activity list is reported so a human (or a future API) can
      target just that part. If/when Fabric exposes a recovery endpoint, the
-     `relaunch()` method is the single place to add it.
+     `run_on_demand()` method is the single place to add it.
+
+### Two limitations to be aware of
+
+1. **No partial rerun via the public API.** Even when the failed activity is
+   known, the only programmatic relaunch is a **full pipeline run**. There is
+   no "rerun only the failed subpipeline/activity" call in the public REST
+   API today. The activity detail is *informational* (tells you *what* failed),
+   not a mechanism to *target* a partial rerun.
+
+2. **Activity detail can be empty even for a `Failed` run.** `queryactivityruns`
+   may return `{"value": []}` — e.g. for older runs (activity-level data has a
+   shorter retention window than the job-instance record) or runs that failed
+   before any activity was recorded. An empty list does **not** mean nothing
+   failed; it means the detail isn't available. The script reports the
+   pipeline-level `Failed` status and degrades gracefully rather than crashing.
 
 ## Authentication modes
 

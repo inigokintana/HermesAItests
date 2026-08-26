@@ -85,24 +85,31 @@ So the program implements a two-tier strategy:
 
 ## Authentication modes
 
-Two supported modes, chosen by config:
+Three supported modes, chosen by `FABRIC_AUTH_MODE` (`spn` is the default):
 
-- **Service principal (SPN)** — recommended for automation. Needs
+- **Managed identity (`mi`)** — **preferred whenever the script runs on Azure**
+  (VM, Function App, AKS, App Service, etc.). No client secret to store or
+  rotate — Azure manages the credential. Needs no `FABRIC_TENANT_ID` or
+  `FABRIC_CLIENT_SECRET`; set `FABRIC_CLIENT_ID` only for a *user-assigned*
+  identity (omit for system-assigned). The identity must still be added to the
+  workspace as a Contributor.
+- **Service principal (`spn`)** — for automation outside Azure. Needs
   `FABRIC_TENANT_ID`, `FABRIC_CLIENT_ID`, `FABRIC_CLIENT_SECRET`. The SPN must
   be added to the workspace as a Contributor and Fabric REST APIs enabled in
   the tenant admin portal.
-- **Device code (interactive)** — for local testing. Uses
+- **Device code (`device`)** — for local testing. Uses
   `FABRIC_TENANT_ID` + `FABRIC_CLIENT_ID` (a public client app registration)
   and prints a login URL/code.
 
 ### Scopes (SPN vs device-code)
 
-The two modes request **different scopes**, and this matters:
+The SPN and device-code modes request **different scopes**, and this matters:
 
 | Mode | Scope requested | Why |
 |------|-----------------|-----|
 | SPN (client credentials) | `https://api.fabric.microsoft.com/.default` | `.default` resolves to the app registration's pre-configured, admin-consented permissions. |
 | Device-code (public client) | `Item.ReadWrite.All` + `Workspace.ReadWrite.All` (explicit) | `.default` on a public client resolves to the app registration's *static* permissions, which often lack the Fabric delegated permissions — yielding a token with no Fabric scopes and an HTTP `403 InsufficientScopes`. Requesting the explicit delegated scopes avoids this. |
+| Managed identity | `resource=https://api.fabric.microsoft.com` (IMDS) | The IMDS endpoint issues a token for the Fabric resource directly; no scope string is needed. |
 
 If you hit `403 InsufficientScopes` on the device-code path, the app
 registration is missing the Fabric delegated permissions; requesting the
@@ -113,9 +120,10 @@ explicit scopes (as the script now does) is the fix.
 Copy `.env.example` to `.env` and fill in:
 
 ```
-FABRIC_TENANT_ID=...
-FABRIC_CLIENT_ID=...
-FABRIC_CLIENT_SECRET=...        # omit for device-code flow
+FABRIC_AUTH_MODE=spn            # spn | device | mi
+FABRIC_TENANT_ID=...            # spn, device
+FABRIC_CLIENT_ID=...            # spn, device; mi (user-assigned only)
+FABRIC_CLIENT_SECRET=...        # spn only
 FABRIC_WORKSPACE_ID=...
 FABRIC_PIPELINE_NAME=...        # or FABRIC_PIPELINE_ID
 ```

@@ -127,16 +127,49 @@ class FabricClient:
         return data or []
 
 
-def acquire_token(tenant_id: str, client_id: str, client_secret: Optional[str]) -> str:
-    """Acquire a token via SPN (client credentials) or device-code flow."""
-    authority = f"https://login.microsoftonline.com/{tenant_id}"
-    app = msal.ConfidentialClientApplication(
-        client_id, authority=authority, client_credential=client_secret
-    ) if client_secret else msal.PublicClientApplication(client_id, authority=authority)
+def acquire_token_managed_identity(client_id: Optional[str]) -> str:
+    """Acquire a token via Azure Managed Identity (IMDS endpoint).
 
-    if client_secret:
+    Only works when running on Azure infrastructure (VM, Function App, AKS,
+    App Service, etc.) with a system- or user-assigned managed identity.
+    No client secret is involved — Azure rotates the credential for you.
+    Prefer this over SPN whenever the script runs on Azure.
+    """
+    url = (
+        "http://169.254.169.254/metadata/identity/oauth2/token"
+        "?api-version=2018-02-01&resource=https://api.fabric.microsoft.com"
+    )
+    if client_id:  # user-assigned managed identity
+        url += f"&client_id={client_id}"
+    resp = requests.get(url, headers={"Metadata": "true"}, timeout=10)
+    if resp.status_code != 200:
+        raise FabricError(
+            f"Managed Identity token request failed: HTTP {resp.status_code}: {resp.text[:300]}"
+        )
+    data = resp.json()
+    if "access_token" not in data:
+        raise FabricError(f"Managed Identity token missing access_token: {data}")
+    return data["access_token"]
+
+
+def acquire_token(
+    tenant_id: Optional[str],
+    client_id: Optional[str],
+    client_secret: Optional[str],
+    auth_mode: str,
+) -> str:
+    """Acquire a token via SPN, device-code, or managed identity."""
+    if auth_mode == "mi":
+        return acquire_token_managed_identity(client_id)
+
+    authority = f"https://login.microsoftonline.com/{tenant_id}"
+    if auth_mode == "spn":
+        app = msal.ConfidentialClientApplication(
+            client_id, authority=authority, client_credential=client_secret
+        )
         result = app.acquire_token_for_client(scopes=SPN_SCOPES)
-    else:
+    else:  # device-code
+        app = msal.PublicClientApplication(client_id, authority=authority)
         flow = app.initiate_device_flow(scopes=DELEGATED_SCOPES)
         if "user_code" not in flow:
             raise FabricError(f"Device flow failed: {flow}")
@@ -206,15 +239,31 @@ def main() -> int:
     tenant_id = os.getenv("FABRIC_TENANT_ID")
     client_id = os.getenv("FABRIC_CLIENT_ID")
     client_secret = os.getenv("FABRIC_CLIENT_SECRET")
+    auth_mode = (os.getenv("FABRIC_AUTH_MODE") or "spn").lower()
     workspace_id = os.getenv("FABRIC_WORKSPACE_ID")
     pipeline_name = os.getenv("FABRIC_PIPELINE_NAME")
     pipeline_id = os.getenv("FABRIC_PIPELINE_ID")
 
-    missing = [k for k, v in {
-        "FABRIC_TENANT_ID": tenant_id,
-        "FABRIC_CLIENT_ID": client_id,
-        "FABRIC_WORKSPACE_ID": workspace_id,
-    }.items() if not v]
+    if auth_mode not in ("spn", "device", "mi"):
+        print(f"Invalid FABRIC_AUTH_MODE '{auth_mode}' (expected spn, device, or mi).", file=sys.stderr)
+        return 2
+
+    # Required config depends on the auth mode.
+    required = {"FABRIC_WORKSPACE_ID": workspace_id}
+    if auth_mode == "spn":
+        required.update({
+            "FABRIC_TENANT_ID": tenant_id,
+            "FABRIC_CLIENT_ID": client_id,
+            "FABRIC_CLIENT_SECRET": client_secret,
+        })
+    elif auth_mode == "device":
+        required.update({
+            "FABRIC_TENANT_ID": tenant_id,
+            "FABRIC_CLIENT_ID": client_id,
+        })
+    # "mi" needs no tenant/secret; client_id is optional (user-assigned MI only).
+
+    missing = [k for k, v in required.items() if not v]
     if not pipeline_name and not pipeline_id:
         missing.append("FABRIC_PIPELINE_NAME or FABRIC_PIPELINE_ID")
     if missing:
@@ -222,7 +271,7 @@ def main() -> int:
         return 2
 
     try:
-        token = acquire_token(tenant_id, client_id, client_secret)
+        token = acquire_token(tenant_id, client_id, client_secret, auth_mode)
         client = FabricClient(token)
 
         pipeline = client.find_pipeline(workspace_id, pipeline_name, pipeline_id)

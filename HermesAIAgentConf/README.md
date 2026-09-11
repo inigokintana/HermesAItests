@@ -6,9 +6,14 @@ Always inspect `CMDB.md` at the root of the repository to understand the technol
 
 2) Create Profile
 
-3) Config profile
-    - SLM/SLM
-    - Tools
-    - Skills
+hermes profile create your-new-profile
 
-4) Config Customs Skills/Plugins
+3) Config the new profile
+
+your-new-profile setup 
+
+    - SLM/LLM of your choice
+    - Tools: allow terminal execution to execute the python script
+    - Skills: 
+            - Config custom skill see SKILL.md in this folder
+            - You can also check other skills https://hermes-agent.nousresearch.com/docs/skills

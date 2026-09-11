@@ -30,7 +30,8 @@ The repo already has a venv (`.venv`) with `requests`, `msal`, `python-dotenv`.
 Activate it and confirm credentials exist before running:
 
 ```bash
-cd /home/inigokintana/urai/developer/HermesAItests
+HOME='Put your home path here'
+cd $HOME/$HermesAItests
 source .venv/bin/activate
 # credentials live in .env (copy .env.example to .env, fill in)
 python fabric_pipeline_monitor.py --check-only
